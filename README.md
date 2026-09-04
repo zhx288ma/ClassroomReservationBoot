@@ -17,7 +17,7 @@
 
 | 登录页 | 学生工作台 | 管理员工作台 |
 | --- | --- | --- |
-| ![登录页](docs/screenshots/frontend-login.png) | ![学生工作台](docs/screenshots/frontend-student-dashboard.png) | ![管理员工作台](docs/screenshots/frontend-admin-dashboard.png) |
+| ![登录页](assets/screenshots/frontend-login.png) | ![学生工作台](assets/screenshots/frontend-student-dashboard.png) | ![管理员工作台](assets/screenshots/frontend-admin-dashboard.png) |
 
 前端由 Spring Boot 静态资源直接提供，不需要单独启动 Node 服务。登录后按照 `ADMIN` 和 `USER` 角色展示不同菜单，登录页和注册页不显示业务侧边栏。
 
@@ -290,25 +290,183 @@ finalScore = 0.35 × rerank + 0.65 × normalizedRRF
 
 ### RAG 检索评测
 
-评测过程先用 45 条 DEV 定位切分、候选召回与排序问题；已查看结果的 15 条历史 TEST 随后降级为回归集。参数冻结后另建 20 条 BLIND_TEST，记录语料、问题集、Qrels 和配置哈希，再执行首次盲测。
+#### 1. 数据集如何构建
 
-| BLIND_TEST20 流水线 | Recall@1 | Recall@3 | MRR@3 | 平均检索 | P95 |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| 关键词 | 90% | 100% | 95% | 41 ms | 47 ms |
-| 向量 | 80% | 95% | 86.67% | 164 ms | 260 ms |
-| RRF | 95% | 95% | 95% | 205 ms | 300 ms |
-| RRF + Cross-Encoder 加权精排 | **95%** | **100%** | **96.67%** | 485 ms | 571 ms |
+评测语料是一份约 189 页的校园学生管理与规章 PDF。PDFBox 提取后得到约 258 个 Chunk，每个 Chunk 保留文档 ID、序号、正文、分类、哈希和向量状态。
 
-`Recall@3` 的目标是人工标注的相关 **Chunk**，它证明正确证据是否进入 Top 3，不等于最终回答正确率。20 条盲测规模仍较小，且来自单份长文档，结果只用于该项目版本的工程验证，不包装成通用 RAG 基准。
+| 数据集 | 数量 | 用途 | 是否允许调参 |
+| --- | ---: | --- | --- |
+| 项目规则回归集 | 20 | 验证预约、签到、候补等项目规则没有回归 | 仅作功能回归 |
+| DEV | 45 | 分析失败、修正无效标签、选择融合策略和权重 | 允许 |
+| 历史 TEST | 15 | 最初用于留出验证；查看并修正标签后降级为固定回归集 | 不再作为盲测 |
+| BLIND_TEST | 20 | 参数冻结后验证方案能否迁移到未见问题 | 首次执行前禁止查看结果或调参 |
 
-较早一轮 65 条端到端答案评测记录了以下指标：引用正确率自动代理 80%、忠实度启发式代理 80%、无依据回答比例 20%、5 条拒答用例准确率 100%；端到端平均 3651 ms、P50 3230 ms、P95 4970 ms，检索平均 788 ms、精排平均 296 ms、生成平均 2504 ms。该轮人工审核尚未完成，因此 **人工正确率保持 N/A**，不把自动指标冒充人工结论。
+20 条项目规则回归集只用于快速验证系统内置规则，当前 document-level Recall@1 为 90%、Recall@3 为 95%、MRR@3 为 92.5%。它的语料和问题都来自项目规则，难度低于外部长文档，因此不与下面的 Chunk 级长文档评测混为一个结论。
 
-完整评测方法、失败样本和指标边界见：
+每道外部制度问题不是只标一个文档名，而是人工对照 PDF 标注：
 
-- [Agent 与 RAG 面试手册](docs/Agent与RAG面试手册.md)
-- [Agent 评测操作手册](docs/Agent评测操作手册.md)
-- [Agent 答案评测报告](docs/Agent答案评测报告-20260901.md)
-- [RAG 交叉编码器评测](docs/RAG交叉编码器评测-20260830.md)
+- `question`：自然语言问题。
+- `primaryAnchor`：主要证据锚点。
+- `acceptedAnchors`：经过人工确认、同样可以回答问题的多个等价证据。
+- `split`：`DEV`、`TEST` 或 `BLIND_TEST`。
+
+命中目标是 **Chunk**，不是 Document。因为语料主要来自同一份长 PDF，如果只要返回同一文档就算命中，指标几乎没有区分度。项目没有训练 Embedding、Reranker 或 LLM，因此 DEV/TEST 的作用类似机器学习开发集和测试集，但它们用于选择检索工程参数，不是模型训练集。
+
+#### 2. 指标与判定
+
+```text
+Recall@1 = Top 1 中含任一 relevant Chunk 的问题数 / 问题总数
+Recall@3 = Top 3 中含任一 relevant Chunk 的问题数 / 问题总数
+MRR@3    = 每题首个 relevant Chunk 在 Top 3 中倒数排名的平均值
+Candidate Recall = 深层候选集中出现 relevant Chunk 的问题比例
+```
+
+`Recall@3` 衡量正确证据能否进入提供给 LLM 的上下文；`MRR@3` 同时关注证据是否靠前；Candidate Recall 用于区分“根本没有召回”和“召回后排序失败”。这些指标都不等于最终答案正确率。
+
+#### 3. 如何定位一次漏召回
+
+第一版接口只返回最终 Top 3。看到未命中时，无法判断问题出在 PDF 切分、关键词召回、向量召回、RRF 截断还是 Cross-Encoder。随后为每个问题增加单次流水线诊断快照，保存：
+
+```text
+目标 Chunk IDs
+  -> lexicalRanks
+  -> vectorRanks
+  -> rrfRanks
+  -> rerankCandidateRanks
+  -> finalRanks
+```
+
+诊断接口按目标首次丢失的位置生成原因：
+
+| 原因 | 含义 | 对应处理 |
+| --- | --- | --- |
+| `CHUNK_MISSING` | 人工锚点不在任何已索引 Chunk 中 | 检查 PDF 提取、空白、切分边界和标签 |
+| `ROUGH_RECALL_MISS` | 关键词和向量两路都未召回目标 | 查询改写、同义词、向量质量或扩大候选深度 |
+| `FUSION_MISS` | 单路命中，但 RRF 融合后目标丢失 | 检查融合参数和干扰 Chunk |
+| `RRF_CANDIDATE_CUTOFF` | 粗召回命中，但未进入送给精排器的 Top N | 仅在 DEV 上调整候选数并评估成本 |
+| `RERANK_DEGRADED` | 目标原在 RRF Top 3，精排后掉出 | 检查 hard negative、模型和精排权重 |
+| `FINAL_RANK_MISS` | 目标进入精排候选，但最终仍在 Top 3 外 | 增加章节标题上下文或改善精排输入 |
+
+诊断 45 条 DEV 时，P04、P07、P09 表面上是漏召回。逐题读取数据库中的返回 Chunk 后发现，系统已经召回了更具体或同样有效的校级条款，但旧测试只接受另一段通用规定；另外 PDFBox 会在中文字符间插入换行、半角或全角空格，直接执行字符串 `contains` 又制造了假阴性。
+
+修复方式是把单一锚点升级为 qrels 风格的多个 `acceptedAnchors`，并在比较前统一移除 PDF 空白：
+
+```java
+private String normalizeEvidence(String value) {
+    if (value == null) {
+        return "";
+    }
+    // 同时去除换行、制表符、普通空格和全角空格，避免 PDF 排版造成假阴性。
+    return value.replaceAll("[\\s\\u3000]+", "");
+}
+
+private boolean isRelevant(String chunk, List<String> acceptedAnchors) {
+    String normalizedChunk = normalizeEvidence(chunk);
+    // 任一经过人工核验的证据锚点存在，就把该 Chunk 判为 relevant。
+    return acceptedAnchors.stream()
+            .map(this::normalizeEvidence)
+            .anyMatch(normalizedChunk::contains);
+}
+```
+
+这一步修复的是 **评测假阴性**，不是算法能力，不能把修复前后的指标差异写成检索提升。真正的算法贡献必须在同一语料、同一问题、同一 qrels 下做消融。
+
+#### 4. 单次快照消融
+
+为了避免四种流水线各调用一次外部 API，同一道题只执行一次关键词召回、一次 Embedding/Qdrant 查询和一次 Rerank，并在内存中保存各阶段排序，再从同一份快照计算四组指标。这样既减少重复费用，也避免网络波动和模型排序抖动破坏可比性。
+
+同一 qrels 版本的结果如下：
+
+| 数据集 | 流水线 | Recall@1 | Recall@3 | MRR@3 | 平均检索 |
+| --- | --- | ---: | ---: | ---: | ---: |
+| DEV 45 | 关键词 | 60.00% | 80.00% | 68.52% | 43 ms |
+| DEV 45 | 向量 | 55.56% | 88.89% | 68.52% | 165 ms |
+| DEV 45 | RRF | 55.56% | 97.78% | 74.44% | 207 ms |
+| DEV 45 | RRF + 加权精排 | **64.44%** | **100.00%** | **81.11%** | 492 ms |
+| 历史 TEST 15 | 关键词 | 46.67% | 66.67% | 56.67% | 42 ms |
+| 历史 TEST 15 | 向量 | 53.33% | 80.00% | 63.33% | 143 ms |
+| 历史 TEST 15 | RRF | 46.67% | 93.33% | 67.78% | 185 ms |
+| 历史 TEST 15 | RRF + 加权精排 | **60.00%** | **100.00%** | **78.89%** | 495 ms |
+
+可以得到三个结论：
+
+1. 向量分支改善了同义改写的 Top 3 覆盖，但精确条款、数字和专有名词上关键词仍有优势。
+2. RRF 把两路互补证据合并后，历史 TEST Recall@3 从单路的 66.67%/80.00% 提升到 93.33%。
+3. Cross-Encoder 进一步改善排序，但平均检索耗时从 RRF 的 185 ms 增加到 495 ms，需要接受准确性与延迟的交换。
+
+#### 5. 为什么没有直接相信 Cross-Encoder
+
+初次实验曾用 Cross-Encoder 分数完全覆盖 RRF 排名。在当时同一版单锚点评测中，历史 TEST Recall@1 从 40.00% 提升到 53.33%，MRR@3 从 54.44% 提升到 58.89%，但 Recall@3 反而从 73.33% 降到 66.67%。模型把少量高相关结果推到了第一名，也把部分边界证据挤出了 Top 3。
+
+因此最终先归一化 RRF 分数，再在 DEV 上选择加权融合：
+
+```text
+normalizedRrf = (rrfScore - minRrf) / (maxRrf - minRrf)
+finalScore    = 0.35 × crossEncoderScore + 0.65 × normalizedRrf
+```
+
+0.35 不是理论最优常数，而是当前 DEV 上保留粗排稳定性和利用语义精排的折中。候选数固定为 RRF Top 30；候选过少会提前截掉证据，过多则线性增加 Rerank Token、延迟和费用。
+
+#### 6. 冻结盲测与最终结果
+
+原 15 条 TEST 已经被逐题查看并修正过 qrels，因此主动将其降级为回归集。之后新增 20 条未被原 60 题覆盖的问题，并在第一次运行前冻结：
+
+1. PDF 文件哈希与知识库版本。
+2. 问题、主锚点、多个 accepted anchors 和数据集 SHA-256。
+3. 650/100 切分参数、Embedding 模型和 1024 维度。
+4. RRF `k=60`、精排候选数 30、精排权重 0.35。
+5. 首次运行的完整逐题结果，不删除失败题，不在看到结果后改题。
+
+| BLIND_TEST20 流水线 | Candidate Recall | Recall@1 | Recall@3 | MRR@3 | 平均检索 | P95 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 关键词 | 100% | 90% | 100% | 95% | 41 ms | 47 ms |
+| 向量 | 100% | 80% | 95% | 86.67% | 164 ms | 260 ms |
+| RRF | 100% | 95% | 95% | 95% | 205 ms | 300 ms |
+| RRF + Cross-Encoder 加权精排 | 100% | **95%** | **100%** | **96.67%** | 485 ms | 571 ms |
+
+唯一明显困难题 B17 是“因违反学术诚信受到记过处分，毕业当年还能授予学位吗”。目标证据在关键词第 2、向量第 10、RRF 第 5，最终由 Cross-Encoder 提升到第 3。这个个例说明融合并不保证每题单调变好，精排解决的是“候选已召回但最终排序不够靠前”。
+
+20 条盲测来自单份长文档，规模仍小。首次运行后它也不再是未见数据，只能作为固定回归集；下一轮继续优化时必须重新建立新的 DEV 和 BLIND_TEST，不能反复观察同一盲测来选参数。
+
+#### 7. 答案质量与性能评测
+
+检索命中不代表模型一定正确使用证据，因此另用 60 条可回答问题和 5 条知识库外拒答问题做端到端评测：
+
+| 指标 | 当前记录 | 口径 |
+| --- | ---: | --- |
+| 引用正确率 | 80% | 自动代理：引用 Chunk 含 accepted anchor 且来源类别正确 |
+| 忠实度 | 80% | 启发式代理：关键事实和证据词覆盖，不等同人工判断 |
+| 无依据回答比例 | 20% | 回答缺少足以支持结论的证据 |
+| 拒答准确率 | 100%（5/5） | 小规模安全回归集 |
+| 人工正确率 | N/A | 已生成审核结构，但尚未完成逐条人工复核 |
+| 端到端平均 / P50 / P95 | 3651 / 3230 / 4970 ms | 包含路由、检索、精排与完整生成 |
+| 检索 / 精排 / 生成平均耗时 | 788 / 296 / 2504 ms | 分阶段计时 |
+| 总 Token | 943,210 | 65 条评测调用合计 |
+
+Rerank 输入约占该轮总 Token 的 88.6%，因为每题最多向 Cross-Encoder 提交 30 个长 Chunk。这说明成本优化首先应在 DEV 上比较候选数 30/20/15 对 Recall@3、MRR、P95 和费用的影响，而不是只压缩最终答案。
+
+自动引用和忠实度只能用于持续回归。人工正确率没有完成前保持 `N/A`，README 不把自动代理包装成人工结论，也不把 BLIND_TEST Recall@3 100% 写成“回答准确率 100%”。
+
+#### 8. 如何复现诊断与评测
+
+1. 管理员上传 PDF，并通过 `GET /agent/knowledge/status` 确认约 258 个 Chunk 和向量均已索引。
+2. 使用 `GET /agent/evaluations/external-policy/diagnostics?split=DEV` 获取四阶段单次快照、失败原因和消融汇总。
+3. 只在 DEV 上修改检索参数，每次只改变一个变量，再比较 Recall@1、Recall@3、MRR@3、P95 和 Token。
+4. 固定代码、模型、qrels 和参数后，为新 BLIND_TEST 生成 SHA-256，再进行首次正式运行。
+5. 使用 `POST /agent/evaluations/external-policy/answers` 运行答案质量集，保存返回的 `runId`。
+6. 人工检查正确性、完整性、忠实度、引用和拒答，并通过 `/agent/evaluations/external-policy/reviews` 回填。
+7. 通过 `/agent/evaluations/external-policy/runs/{runId}` 获取同时包含自动指标和人工指标的最终汇总。
+
+核心实现可直接在仓库中核对：
+
+| 代码位置 | 可验证内容 |
+| --- | --- |
+| [`AgentKnowledgeServiceImpl`](src/main/java/com/xuan/boot/service/impl/AgentKnowledgeServiceImpl.java) | PDF 解析、650/100 切分、双路召回、RRF 和加权精排 |
+| [`AgentEmbeddingService`](src/main/java/com/xuan/boot/service/impl/AgentEmbeddingService.java) | Embedding 批量调用、模型与 Token 指标 |
+| [`AgentVectorStoreService`](src/main/java/com/xuan/boot/service/impl/AgentVectorStoreService.java) | Qdrant Collection、Cosine 查询和批量 upsert |
+| [`AgentRerankService`](src/main/java/com/xuan/boot/service/impl/AgentRerankService.java) | Cross-Encoder 批量精排与失败降级 |
+| [`AgentEvaluationServiceImpl`](src/main/java/com/xuan/boot/service/impl/AgentEvaluationServiceImpl.java) | qrels、数据集拆分、单次快照消融、失败归因、盲测哈希和答案评测 |
+| [`AgentServiceImpl`](src/main/java/com/xuan/boot/service/impl/AgentServiceImpl.java) | LangChain4j 工具编排、证据复用、调用追踪与安全拒绝 |
 
 ## 快速启动
 
@@ -443,7 +601,7 @@ powershell -ExecutionPolicy Bypass -File .\jmeter\run-load-test.ps1 `
 
 脚本会初始化压测账号、清理同一测试时段的 MySQL/Redis 数据、创建容量 80 的时段、执行压测、生成 JTL/HTML 报告并输出数据库一致性核对结果。重新测试时必须使用未来日期，或修改示例日期。
 
-详细流程见 [手工测试流程](docs/手工测试流程.md) 和 [性能测试报告](docs/性能测试报告.md)。
+脚本末尾会直接输出同一轮测试对应的 MySQL 核对结果，避免把不同日期、不同 JTL 和不同数据库状态拼成一组指标。
 
 ### Agent/RAG 验证
 
@@ -454,7 +612,7 @@ powershell -ExecutionPolicy Bypass -File .\jmeter\run-load-test.ps1 `
 5. 调用 `GET /agent/evaluations/external-policy/diagnostics?split=DEV` 做调试。
 6. 参数冻结后才能对新的 `BLIND_TEST` 执行正式评测，已经查看过的测试集只能作为回归集。
 
-具体请求体、人工复核流程和评测指标见 [Agent 评测操作手册](docs/Agent评测操作手册.md)。
+评测接口会返回 `evaluationSet`、`fixedSplit`、数据集指纹、单次快照标识、四组消融结果、失败原因分布和逐题排名，便于保存并复核本次实验。
 
 ## 数据模型
 
@@ -500,20 +658,28 @@ ClassroomReservationBoot/
 ├─ src/test/          # JUnit、Mockito、Testcontainers
 ├─ jmeter/            # 压测计划、账号初始化和 PowerShell 执行脚本
 ├─ docker/            # Prometheus、Grafana 配置
-├─ docs/              # 测试、运维、Agent 和面试文档
+├─ assets/            # README 使用的公开展示资源
 ├─ docker-compose.yml
 └─ Dockerfile
 ```
 
-## 文档导航
+## 核心代码导航
 
-- [项目完整面试指南](docs/项目完整面试指南.md)：从业务流程、代码调用顺序到八股追问的完整说明。
-- [功能实现与面试指南](docs/功能实现与面试指南.md)：各模块实现方式与面试表达。
-- [项目组件架构指南](docs/项目组件架构指南.md)：组件是什么、为什么选、如何协作。
-- [Agent 与 RAG 面试手册](docs/Agent与RAG面试手册.md)：切分、Embedding、Qdrant、RRF、精排、降级和评测。
-- [手工测试流程](docs/手工测试流程.md)：Swagger、数据库、中间件和 JMeter 测试步骤。
-- [前端端到端测试指南](docs/前端端到端测试指南.md)：学生与管理员页面交互检查。
-- [简历描述真实性对照表](docs/简历描述真实性对照表.md)：每条简历描述对应的代码和证据。
+| 模块 | 入口代码 |
+| --- | --- |
+| 高并发预约、取消、候补与签到 | [`ReservationServiceImpl`](src/main/java/com/xuan/boot/service/impl/ReservationServiceImpl.java) |
+| 管理员教室时段维护 | [`RoomSlotServiceImpl`](src/main/java/com/xuan/boot/service/impl/RoomSlotServiceImpl.java) |
+| JWT 与 Spring Security | [`JwtTokenService`](src/main/java/com/xuan/boot/support/JwtTokenService.java)、[`SecurityConfig`](src/main/java/com/xuan/boot/config/SecurityConfig.java) |
+| RabbitMQ 通知 Outbox | [`NotificationOutboxServiceImpl`](src/main/java/com/xuan/boot/service/impl/NotificationOutboxServiceImpl.java) |
+| Kafka 领域事件 Outbox | [`DomainEventServiceImpl`](src/main/java/com/xuan/boot/service/impl/DomainEventServiceImpl.java) |
+| Kafka 统计消费 | [`ClassroomEventKafkaConsumer`](src/main/java/com/xuan/boot/service/impl/ClassroomEventKafkaConsumer.java) |
+| SSE 实时通知 | [`SseNotificationServiceImpl`](src/main/java/com/xuan/boot/service/impl/SseNotificationServiceImpl.java) |
+| Caffeine + Redis 二级缓存 | [`TwoLevelCacheService`](src/main/java/com/xuan/boot/support/TwoLevelCacheService.java) |
+| Elasticsearch 教室搜索 | [`RoomSearchServiceImpl`](src/main/java/com/xuan/boot/service/impl/RoomSearchServiceImpl.java) |
+| LangChain4j 只读工具 | [`ReservationAgentTools`](src/main/java/com/xuan/boot/agent/ReservationAgentTools.java) |
+| RAG 检索与精排 | [`AgentKnowledgeServiceImpl`](src/main/java/com/xuan/boot/service/impl/AgentKnowledgeServiceImpl.java) |
+| RAG 诊断与评测 | [`AgentEvaluationServiceImpl`](src/main/java/com/xuan/boot/service/impl/AgentEvaluationServiceImpl.java) |
+| 数据库版本迁移 | [`db/migration`](src/main/resources/db/migration) |
 
 ## 已知边界与后续方向
 
@@ -534,5 +700,5 @@ ClassroomReservationBoot/
 ## 安全说明
 
 - 仓库不包含真实模型 API Key、IDEA 本地配置、上传语料、日志和生成的压测报告。
-- `.env`、`.idea`、`uploads/`、`test-data/agent-corpus/`、JMeter JTL/HTML 报告等均由 `.gitignore` 排除。
+- `.env`、`.idea`、`docs/`、`uploads/`、`test-data/agent-corpus/`、JMeter JTL/HTML 报告等均由 `.gitignore` 排除；本地 `docs/` 中的面试底稿和原始评测导出不会继续发布到仓库当前版本。
 - 如果密钥曾经出现在聊天、截图、日志或提交历史中，应立即在服务商控制台轮换，不能只依赖删除文件。

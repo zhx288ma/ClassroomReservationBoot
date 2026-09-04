@@ -24,6 +24,9 @@ tmp/
 # Local evaluation corpus may contain downloaded or generated source files
 test-data/agent-corpus/
 
+# Internal interview notes, raw evaluation exports, and local operating records
+/docs/
+
 # Keep the JMeter plan/scripts, but exclude generated results and HTML reports
 jmeter/result-*.jtl
 jmeter/report-*/
