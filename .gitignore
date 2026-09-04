@@ -1,0 +1,35 @@
+# Local secrets and machine-specific configuration
+.env
+.env.*
+!.env.example
+.idea/
+.vscode/
+*.iml
+*.iws
+*.ipr
+
+# Java and Maven build output
+target/
+.m2-upgrade-cache/
+*.class
+
+# Runtime data and generated artifacts
+uploads/
+logs/
+output/
+temp/
+tmp/
+*.log
+
+# Local evaluation corpus may contain downloaded or generated source files
+test-data/agent-corpus/
+
+# Keep the JMeter plan/scripts, but exclude generated results and HTML reports
+jmeter/result-*.jtl
+jmeter/report-*/
+jmeter/runtime-*.jmx
+jmeter/*.log
+
+# OS metadata
+.DS_Store
+Thumbs.db

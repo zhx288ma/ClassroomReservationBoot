@@ -1,0 +1,180 @@
+server:
+  port: 8081
+  tomcat:
+    threads:
+      max: 200
+      min-spare: 20
+    accept-count: 2000
+    max-connections: 3000
+    keep-alive-timeout: 90s
+    max-keep-alive-requests: -1
+
+spring:
+  application:
+    name: classroom-reservation-boot
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3306}/${MYSQL_DATABASE:classroom_reservation}?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    username: ${MYSQL_USERNAME:root}
+    password: ${MYSQL_PASSWORD:123456}
+    hikari:
+      maximum-pool-size: 40
+      minimum-idle: 10
+      connection-timeout: 30000
+  sql:
+    init:
+      mode: never
+      encoding: UTF-8
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    baseline-version: 0
+    locations: classpath:db/migration
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB
+  redis:
+    host: ${REDIS_HOST:localhost}
+    port: ${REDIS_PORT:6379}
+    database: 0
+    timeout: 3s
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    template:
+      mandatory: true
+    listener:
+      simple:
+        acknowledge-mode: auto
+        default-requeue-rejected: false
+        retry:
+          enabled: true
+          initial-interval: 1s
+          max-attempts: 3
+          multiplier: 2
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:19092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      acks: all
+      retries: 3
+    consumer:
+      group-id: classroom-statistics-consumer
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      properties:
+        spring.json.trusted.packages: "*"
+
+mybatis:
+  configuration:
+    map-underscore-to-camel-case: true
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+  api-docs:
+    path: /v3/api-docs
+
+reservation:
+  token-ttl-minutes: 30
+  jwt-secret: ${JWT_SECRET:classroom-reservation-jwt-secret-change-me}
+  cache-ttl-minutes: 30
+  local-cache-ttl-minutes: 5
+  local-cache-maximum-size: 10000
+  default-room-slot-capacity: 30
+  sign-code-ttl-hours: 12
+  outbox:
+    publish-delay-ms: 3000
+    max-retry-count: 5
+  credit:
+    min-reserve-score: 60
+    checkin-reward: 1
+    no-show-penalty: 5
+  no-show:
+    scan-delay-ms: 60000
+    initial-delay-ms: 20000
+  kafka:
+    enabled: ${CLASSROOM_KAFKA_ENABLED:false}
+    topic: ${CLASSROOM_KAFKA_TOPIC:classroom.events}
+    publish-delay-ms: 3000
+    max-retry-count: 5
+  elasticsearch:
+    enabled: ${CLASSROOM_ES_ENABLED:false}
+    url: ${ELASTICSEARCH_URL:http://localhost:9200}
+    index: ${CLASSROOM_ES_INDEX:classroom_index}
+  agent:
+    session-ttl-minutes: 30
+    langchain:
+      # Optional LangChain4j ChatModel. Disabled keeps the deterministic, tool-bounded agent active.
+      enabled: ${CLASSROOM_AGENT_LANGCHAIN_ENABLED:false}
+      base-url: ${CLASSROOM_AGENT_LANGCHAIN_BASE_URL:https://api.openai.com/v1}
+      api-key: ${CLASSROOM_AGENT_LANGCHAIN_API_KEY:}
+      model: ${CLASSROOM_AGENT_LANGCHAIN_MODEL:gpt-4.1-mini}
+    llm:
+      # Default is a deterministic, tool-bounded fallback. Set all three values to enable a compatible LLM intent classifier.
+      enabled: ${CLASSROOM_AGENT_LLM_ENABLED:false}
+      base-url: ${CLASSROOM_AGENT_LLM_BASE_URL:https://api.openai.com/v1}
+      api-key: ${CLASSROOM_AGENT_LLM_API_KEY:}
+      model: ${CLASSROOM_AGENT_LLM_MODEL:gpt-4.1-mini}
+    embedding:
+      # Optional semantic retrieval. When disabled, RAG falls back to local lexical retrieval.
+      enabled: ${CLASSROOM_AGENT_EMBEDDING_ENABLED:false}
+      base-url: ${CLASSROOM_AGENT_EMBEDDING_BASE_URL:https://api.openai.com/v1}
+      api-key: ${CLASSROOM_AGENT_EMBEDDING_API_KEY:}
+      model: ${CLASSROOM_AGENT_EMBEDDING_MODEL:qwen3.7-text-embedding}
+      dimensions: ${CLASSROOM_AGENT_EMBEDDING_DIMENSIONS:1024}
+      # qwen3.7-text-embedding supports at most 20 texts in one synchronous request.
+      batch-size: ${CLASSROOM_AGENT_EMBEDDING_BATCH_SIZE:20}
+    rerank:
+      # Second-stage Cross-Encoder. Failure automatically keeps the RRF order.
+      enabled: ${CLASSROOM_AGENT_RERANK_ENABLED:false}
+      base-url: ${CLASSROOM_AGENT_RERANK_BASE_URL:}
+      api-key: ${CLASSROOM_AGENT_RERANK_API_KEY:${CLASSROOM_AGENT_EMBEDDING_API_KEY:}}
+      model: ${CLASSROOM_AGENT_RERANK_MODEL:qwen3-rerank}
+    vector:
+      # Qdrant stores semantic vectors. Disable it to use lexical retrieval only.
+      enabled: ${CLASSROOM_AGENT_VECTOR_ENABLED:false}
+      url: ${CLASSROOM_QDRANT_URL:http://localhost:6333}
+      api-key: ${CLASSROOM_QDRANT_API_KEY:}
+      collection: ${CLASSROOM_QDRANT_COLLECTION:classroom_agent_knowledge}
+    knowledge:
+      upload-dir: ${CLASSROOM_AGENT_KNOWLEDGE_UPLOAD_DIR:uploads/agent-knowledge}
+    retrieval:
+      # Reciprocal Rank Fusion merges lexical and vector result ranks instead of comparing unrelated scores.
+      rrf-k: ${CLASSROOM_AGENT_RRF_K:60}
+      # Only this RRF Top-N candidate set is sent to the slower Cross-Encoder.
+      rerank-candidate-limit: ${CLASSROOM_AGENT_RERANK_CANDIDATE_LIMIT:30}
+      # DEV-set tuned blend: final = weight * Cross-Encoder + (1-weight) * normalized RRF.
+      rerank-weight: ${CLASSROOM_AGENT_RERANK_WEIGHT:0.35}
+    cost:
+      # Keep prices configurable because provider billing changes. Zero means cost is not calculated.
+      currency: ${CLASSROOM_AGENT_COST_CURRENCY:CNY}
+      llm-input-per-million: ${CLASSROOM_AGENT_LLM_INPUT_PRICE_PER_MILLION:0}
+      llm-output-per-million: ${CLASSROOM_AGENT_LLM_OUTPUT_PRICE_PER_MILLION:0}
+      embedding-input-per-million: ${CLASSROOM_AGENT_EMBEDDING_PRICE_PER_MILLION:0}
+      rerank-input-per-million: ${CLASSROOM_AGENT_RERANK_PRICE_PER_MILLION:0}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+
+info:
+  app:
+    name: classroom-reservation-boot
+    version: 2.0.0
+
+logging:
+  file:
+    name: ${LOG_FILE:logs/classroom-reservation.log}

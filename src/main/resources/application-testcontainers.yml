@@ -1,0 +1,15 @@
+spring:
+  sql:
+    init:
+      mode: never
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    baseline-version: 0
+  rabbitmq:
+    listener:
+      simple:
+        auto-startup: false
+
+reservation:
+  jwt-secret: testcontainers-secret

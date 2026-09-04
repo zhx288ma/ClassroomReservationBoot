@@ -1,0 +1,833 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>线上教室预约系统</title>
+    <link rel="stylesheet" href="./app.css">
+</head>
+<body>
+<div class="admin-wrapper">
+    <header class="main-header">
+        <a class="logo" href="#/dashboard">
+            <span class="logo-mark">CRS</span>
+            <span class="logo-lg">Classroom Cloud</span>
+        </a>
+        <nav class="navbar">
+            <button class="sidebar-toggle" type="button" aria-label="菜单">☰</button>
+            <div class="navbar-title">
+                <strong>教室资源预约与调度平台</strong>
+                <span>API：<b id="apiBaseText"></b></span>
+            </div>
+            <div class="navbar-user">
+                <span id="roleBadge" class="role-badge">未登录</span>
+                <span class="avatar">U</span>
+                <span id="sessionUser">未登录</span>
+                <button id="logoutBtn" class="btn btn-link" type="button">退出</button>
+            </div>
+        </nav>
+    </header>
+
+    <aside class="main-sidebar">
+        <section class="sidebar">
+            <div class="user-panel">
+                <div class="image">CR</div>
+                <div class="info">
+                    <p id="sideUserName">未登录</p>
+                    <span id="sideRoleText">身份待确认</span>
+                </div>
+            </div>
+            <ul class="sidebar-menu">
+                <li class="header">工作台导航</li>
+                <li data-roles="ADMIN,USER"><a href="#/dashboard" data-route="dashboard"><span class="icon">D</span>控制台</a></li>
+                <li data-roles="USER"><a href="#/reserve" data-route="reserve"><span class="icon">R</span>预约教室</a></li>
+                <li data-roles="USER"><a href="#/advisor" data-route="advisor"><span class="icon">A</span>智能推荐</a></li>
+                <li data-roles="ADMIN,USER"><a href="#/agent" data-route="agent"><span class="icon">AI</span>智能助手</a></li>
+                <li data-roles="USER"><a href="#/orders" data-route="orders"><span class="icon">O</span>我的预约</a></li>
+                <li data-roles="ADMIN"><a href="#/rooms" data-route="rooms"><span class="icon">C</span>教室管理</a></li>
+                <li data-roles="ADMIN"><a href="#/roomSlots" data-route="roomSlots"><span class="icon">T</span>时段管理</a></li>
+                <li data-roles="ADMIN"><a href="#/orders" data-route="orders"><span class="icon">O</span>预约总览</a></li>
+                <li data-roles="ADMIN"><a href="#/statistics" data-route="statistics"><span class="icon">K</span>统计大屏</a></li>
+                <li data-roles="ADMIN"><a href="#/ops" data-route="ops"><span class="icon">M</span>中间件运维</a></li>
+                <li data-roles="ADMIN,USER"><a href="#/feedback" data-route="feedback"><span class="icon">F</span>问题反馈</a></li>
+                <li data-roles="ADMIN,USER"><a href="#/notifications" data-route="notifications"><span class="icon">N</span>通知中心</a></li>
+                <li data-roles="ADMIN"><a href="#/logs" data-route="logs"><span class="icon">L</span>联调日志</a></li>
+            </ul>
+        </section>
+    </aside>
+
+    <main id="top" class="content-wrapper">
+        <section class="content-header">
+            <div>
+                <h1 id="pageTitle">控制台</h1>
+                <p id="pageSubtitle">查看当前账号可访问的预约工作台</p>
+            </div>
+            <div class="header-actions">
+                <button id="refreshAllBtn" class="btn btn-primary" type="button">刷新数据</button>
+                <button id="clearLogBtn" class="btn btn-default role-admin-only" type="button">清空日志</button>
+            </div>
+        </section>
+
+        <section class="content">
+            <section id="login" class="page-view auth-view active" data-page="login">
+                <div class="auth-shell">
+                    <div class="auth-visual">
+                        <div class="auth-visual-copy">
+                            <span class="eyebrow">CRS Cloud Console</span>
+                            <h1>教室资源预约与智能调度</h1>
+                            <p>统一接入预约、候补、签到、Redis 库存与 RabbitMQ 通知链路。</p>
+                        </div>
+                    </div>
+                    <div class="auth-card">
+                        <div class="auth-brand">
+                            <strong>线上教室预约系统</strong>
+                            <span>Sign in to continue</span>
+                        </div>
+                        <form id="loginForm" class="auth-form">
+                            <div class="form-group">
+                                <label for="loginPhone">手机号</label>
+                                <input id="loginPhone" name="phone" class="form-control" value="17715993804" autocomplete="username" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="loginPassword">密码</label>
+                                <input id="loginPassword" name="password" class="form-control" value="123456" type="password" autocomplete="current-password" required>
+                            </div>
+                            <button class="btn btn-primary auth-submit" type="submit">登录系统</button>
+                            <p class="auth-switch">还没有账号？<a href="#/register" data-route="register">创建学生账号</a></p>
+                        </form>
+                    </div>
+                </div>
+            </section>
+
+            <section id="register" class="page-view auth-view" data-page="register">
+                <div class="auth-shell">
+                    <div class="auth-visual register-visual">
+                        <div class="auth-visual-copy">
+                            <span class="eyebrow">Student Access</span>
+                            <h1>注册后进入学生预约端</h1>
+                            <p>注册账号默认为普通学生角色，管理员账号由种子数据或后台维护。</p>
+                        </div>
+                    </div>
+                    <div class="auth-card">
+                        <div class="auth-brand">
+                            <strong>创建学生账号</strong>
+                            <span>手机号与密码前后端双校验</span>
+                        </div>
+                        <form id="registerForm" class="auth-form">
+                            <div class="form-group">
+                                <label for="registerUsername">用户名</label>
+                                <input id="registerUsername" name="username" class="form-control" value="demo-user" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="registerPhone">手机号</label>
+                                <input id="registerPhone" name="phone" class="form-control" placeholder="例如 18812345678" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="registerPassword">密码</label>
+                                <input id="registerPassword" name="password" class="form-control" value="123456" type="password" required>
+                            </div>
+                            <button class="btn btn-primary auth-submit" type="submit">注册账号</button>
+                            <p class="auth-switch">已有账号？<a href="#/login" data-route="login">返回登录</a></p>
+                        </form>
+                    </div>
+                </div>
+            </section>
+
+            <section id="dashboard" class="page-view" data-page="dashboard">
+                <div class="small-boxes">
+                    <div class="small-box blue">
+                        <div class="inner">
+                            <h3 id="successCount">-</h3>
+                            <p>成功预约</p>
+                        </div>
+                        <span class="box-icon">R</span>
+                    </div>
+                    <div class="small-box yellow">
+                        <div class="inner">
+                            <h3 id="waitingCount">-</h3>
+                            <p>候补队列</p>
+                        </div>
+                        <span class="box-icon">W</span>
+                    </div>
+                    <div class="small-box green">
+                        <div class="inner">
+                            <h3 id="signedCount">-</h3>
+                            <p>已签到</p>
+                        </div>
+                        <span class="box-icon">S</span>
+                    </div>
+                    <div class="small-box red">
+                        <div class="inner">
+                            <h3 id="cancelCount">-</h3>
+                            <p>已取消</p>
+                        </div>
+                        <span class="box-icon">C</span>
+                    </div>
+                    <div class="small-box green role-user-only">
+                        <div class="inner">
+                            <h3 id="creditScoreCard">-</h3>
+                            <p>信用分</p>
+                        </div>
+                        <span class="box-icon">V</span>
+                    </div>
+                </div>
+                <div class="row role-user-only">
+                    <div class="col col-6">
+                        <div class="box box-primary">
+                            <div class="box-header">
+                                <h3 class="box-title">学生快捷入口</h3>
+                                <span class="box-subtitle">预约、推荐、签到</span>
+                            </div>
+                            <div class="box-body action-grid">
+                                <button class="action-card" data-route="reserve" type="button">预约教室<span>创建一次性令牌后提交预约</span></button>
+                                <button class="action-card" data-route="advisor" type="button">智能推荐<span>按容量、楼栋和热度匹配教室</span></button>
+                                <button class="action-card" data-route="orders" type="button">我的预约<span>取消或签到当前预约</span></button>
+                                <button class="action-card" data-route="feedback" type="button">问题反馈<span>联系管理员处理预约异常</span></button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col col-6">
+                        <div id="creditPanel" class="box box-success">
+                            <div class="box-header">
+                                <h3 class="box-title">信用分账户</h3>
+                                <span class="box-subtitle">未签到扣分，按时签到加分</span>
+                            </div>
+                            <div class="box-body">
+                                <div class="credit-summary">
+                                    <div><strong id="creditScoreText">-</strong><span>当前信用分</span></div>
+                                    <div><strong id="violationCountText">-</strong><span>违约次数</span></div>
+                                </div>
+                                <div id="creditRecords" class="list empty">暂无信用记录</div>
+                            </div>
+                        </div>
+                        <div class="box box-warning">
+                            <div class="box-header"><h3 class="box-title">通知中心</h3></div>
+                            <div class="box-body">
+                                <button class="btn btn-default" data-route="notifications" type="button">查看站内通知</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="row role-admin-only">
+                    <div class="col col-4">
+                        <div class="box box-primary">
+                            <div class="box-header"><h3 class="box-title">管理员工作台</h3></div>
+                            <div class="box-body action-grid">
+                                <button class="action-card" data-route="rooms" type="button">教室管理<span>新增、编辑教室资源</span></button>
+                                <button class="action-card" data-route="roomSlots" type="button">时段管理<span>开放、关闭、维护可预约 room_slot</span></button>
+                                <button class="action-card" data-route="orders" type="button">预约总览<span>查看全部用户预约</span></button>
+                                <button class="action-card" data-route="statistics" type="button">统计大屏<span>查看 Kafka 事件统计和 outbox</span></button>
+                                <button class="action-card" data-route="ops" type="button">中间件运维<span>Redis 与 RabbitMQ 状态</span></button>
+                                <button class="action-card" data-route="feedback" type="button">反馈处理<span>回复学生问题并发送通知</span></button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col col-8">
+                        <div class="box box-solid">
+                            <div class="box-header">
+                                <h3 class="box-title">权限边界</h3>
+                                <span class="box-subtitle">前后端双层隔离</span>
+                            </div>
+                            <div class="box-body split-note">
+                                <p>管理员可以管理教室、查看全量预约、观察 Redis/RabbitMQ；普通学生只能预约、查看自己的预约和通知。</p>
+                                <p>后端已对教室写接口和运维接口加 `ADMIN` 校验，前端隐藏菜单只是第一层体验控制。</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="reserve" class="page-view" data-page="reserve">
+                <div class="row">
+                    <div class="col col-7">
+                        <div class="box box-info">
+                            <div class="box-header">
+                                <h3 class="box-title">教室预约</h3>
+                                <span class="box-subtitle">Submit Token + Redis Lua 原子扣减</span>
+                            </div>
+                            <form id="reserveForm" class="box-body">
+                                <div class="data-type">
+                                    <div class="data-row">
+                                        <div class="data-title">教室</div>
+                                        <div class="data-cell wide">
+                                            <select id="roomSelect" name="roomId" class="form-control" required></select>
+                                        </div>
+                                    </div>
+                                    <div class="data-row">
+                                        <div class="data-title">预约日期</div>
+                                        <div class="data-cell">
+                                            <input id="reserveDate" name="reserveDate" class="form-control" type="date" required>
+                                        </div>
+                                        <div class="data-title">时间段</div>
+                                        <div class="data-cell">
+                                            <select id="timeSlot" name="timeSlot" class="form-control">
+                                                <option value="08:00-10:00">08:00-10:00</option>
+                                                <option value="10:00-12:00">10:00-12:00</option>
+                                                <option value="14:00-16:00">14:00-16:00</option>
+                                                <option value="16:00-18:00">16:00-18:00</option>
+                                                <option value="18:00-20:00">18:00-20:00</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="data-row">
+                                        <div class="data-title">候补策略</div>
+                                        <div class="data-cell wide">
+                                            <label class="check-line">
+                                                <input id="joinWaitlist" type="checkbox" checked>
+                                                <span>库存不足时自动加入候补队列</span>
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="form-actions">
+                                    <button id="submitTokenBtn" class="btn btn-default" type="button">生成一次性令牌</button>
+                                    <button class="btn btn-info" type="submit">提交预约</button>
+                                    <span class="token-line">当前令牌：<code id="submitTokenText">未生成</code></span>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                    <div class="col col-5">
+                        <div class="box box-warning">
+                            <div class="box-header">
+                                <h3 class="box-title">预约规则</h3>
+                                <span class="box-subtitle">学生端操作边界</span>
+                            </div>
+                            <div class="box-body">
+                                <ul class="rule-list">
+                                    <li>预约日期不能早于今天；当天只能预约当前时间之后的时间段。</li>
+                                    <li>预约时间段限制在 08:00 到 20:00。</li>
+                                    <li>同一用户同一时间段只能预约一个教室。</li>
+                                    <li>库存不足时可进入候补队列。</li>
+                                </ul>
+                                <div class="button-group role-admin-only">
+                                    <button id="stockBtn" class="btn btn-warning" type="button">查看库存</button>
+                                    <button id="syncStockBtn" class="btn btn-default role-admin-only" type="button">同步库存</button>
+                                    <button id="clearDemoBtn" class="btn btn-danger btn-outline role-admin-only" type="button">清理演示 Key</button>
+                                </div>
+                                <pre id="stockBox" class="json-box role-admin-only">等待查询</pre>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="orders" class="page-view" data-page="orders">
+                <div class="box box-solid">
+                    <div class="box-header">
+                        <h3 id="ordersTitle" class="box-title">预约列表</h3>
+                        <span id="ordersSubtitle" class="box-subtitle">学生仅查看本人预约，管理员查看全量预约</span>
+                    </div>
+                    <div class="box-body table-box">
+                        <table class="table table-bordered table-striped table-hover">
+                            <thead>
+                            <tr>
+                                <th>订单号</th>
+                                <th>教室</th>
+                                <th>日期</th>
+                                <th>时间段</th>
+                                <th>状态</th>
+                                <th>签到码</th>
+                                <th class="text-center">操作</th>
+                            </tr>
+                            </thead>
+                            <tbody id="ordersBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="box box-warning">
+                    <div class="box-header">
+                        <h3 class="box-title">&#20505;&#34917;&#38431;&#21015;</h3>
+                        <span class="box-subtitle">&#29992;&#25143;&#21487;&#21462;&#28040;&#33258;&#24049;&#30340;&#20505;&#34917;&#65307;&#31649;&#29702;&#21592;&#21487;&#26597;&#30475;&#20840;&#37327;&#20505;&#34917;</span>
+                    </div>
+                    <div class="box-body table-box">
+                        <table class="table table-bordered table-striped table-hover">
+                            <thead>
+                            <tr>
+                                <th>&#20505;&#34917;&#21333;&#21495;</th>
+                                <th>&#25945;&#23460;</th>
+                                <th>&#26085;&#26399;</th>
+                                <th>&#26102;&#38388;&#27573;</th>
+                                <th>&#29366;&#24577;</th>
+                                <th class="text-center">&#25805;&#20316;</th>
+                            </tr>
+                            </thead>
+                            <tbody id="waitlistBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <section id="advisor" class="page-view" data-page="advisor">
+                <div class="row">
+                    <div class="col col-5">
+                        <div class="box box-primary">
+                            <div class="box-header">
+                                <h3 class="box-title">智能预约助手</h3>
+                                <span class="box-subtitle">按容量、可用性、热度推荐</span>
+                            </div>
+                            <form id="advisorForm" class="box-body form-grid">
+                                <div class="form-group">
+                                    <label for="advisorDate">日期</label>
+                                    <input id="advisorDate" class="form-control" type="date" required>
+                                </div>
+                                <div class="form-group">
+                                    <label for="advisorTimeSlot">时间段</label>
+                                    <select id="advisorTimeSlot" class="form-control">
+                                        <option value="08:00-10:00">08:00-10:00</option>
+                                        <option value="10:00-12:00">10:00-12:00</option>
+                                        <option value="14:00-16:00">14:00-16:00</option>
+                                        <option value="16:00-18:00">16:00-18:00</option>
+                                        <option value="18:00-20:00">18:00-20:00</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label for="expectedCapacity">预计人数</label>
+                                    <input id="expectedCapacity" class="form-control" type="number" min="1" value="30">
+                                </div>
+                                <div class="form-group">
+                                    <label for="buildingName">楼栋</label>
+                                    <input id="buildingName" class="form-control" placeholder="可选">
+                                </div>
+                                <div class="box-footer">
+                                    <button class="btn btn-primary" type="submit">获取推荐</button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                    <div class="col col-7">
+                        <div class="box box-solid">
+                            <div class="box-header">
+                                <h3 class="box-title">推荐结果</h3>
+                                <span class="box-subtitle">点击可回填预约表单</span>
+                            </div>
+                            <div id="recommendList" class="recommend-list empty">暂无推荐</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="agent" class="page-view" data-page="agent">
+                <div class="row">
+                    <div class="col col-5">
+                        <div class="box box-primary">
+                            <div class="box-header">
+                                <h3 class="box-title">预约决策助手</h3>
+                                <span class="box-subtitle">检索、解释规则、生成待确认草稿</span>
+                            </div>
+                            <form id="agentForm" class="box-body">
+                                <div class="form-group">
+                                    <label for="agentMessage">你想咨询什么？</label>
+                                    <textarea id="agentMessage" class="form-control agent-message" maxlength="600" required placeholder="例如：找明天晚上 18 点到 20 点有投影的教室；或：签到、学籍、奖助学金等制度规则怎么规定？"></textarea>
+                                </div>
+                                <div class="agent-suggestions" aria-label="示例问题">
+                                    <button class="small secondary" type="button" data-agent-prompt="明天晚上18点到20点，找计算机楼至少30人有投影的教室">找可用教室</button>
+                                    <button class="small secondary" type="button" data-agent-prompt="预约、候补和签到规则是什么？">问预约规则</button>
+                                    <button class="small secondary" type="button" data-agent-prompt="北大公共教学楼学术研讨空间如何预约？请说明资料来源。">问参考校规</button>
+                                    <button class="small secondary role-user-only" type="button" data-agent-prompt="我的预约和候补情况">查看我的预约</button>
+                                    <button class="small secondary role-admin-only" type="button" data-agent-prompt="查看当前教室使用率和候补情况">查看运营统计</button>
+                                </div>
+                                <div class="box-footer">
+                                    <button class="btn btn-primary" type="submit">开始分析</button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                    <div class="col col-7">
+                        <div class="box box-solid">
+                            <div class="box-header">
+                                <h3 class="box-title">分析结果</h3>
+                                <span id="agentMode" class="box-subtitle">等待提问</span>
+                            </div>
+                            <div class="box-body">
+                                <div id="agentAnswer" class="agent-answer empty">输入自然语言需求后，助手会在受控工具范围内检索开放时段。预约必须由你确认并走正常预约链路。</div>
+                                <div id="agentCandidates" class="recommend-list"></div>
+                                <div id="agentStatistics" class="agent-statistics"></div>
+                                <div id="agentSources" class="agent-sources"></div>
+                                <div id="agentNextActions" class="agent-next-actions"></div>
+                                <div id="agentTrace" class="agent-trace"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="row role-admin-only agent-admin-row">
+                    <div class="col col-5">
+                        <div class="box box-warning">
+                            <div class="box-header">
+                                <h3 class="box-title">Agent 知识库</h3>
+                                <span class="box-subtitle">文档切片后供 RAG 检索</span>
+                            </div>
+                            <form id="agentKnowledgeForm" class="box-body form-grid">
+                                <div class="form-group">
+                                    <label for="agentKnowledgeTitle">标题</label>
+                                    <input id="agentKnowledgeTitle" class="form-control" maxlength="160" required placeholder="例如：实验室预约补充规则">
+                                </div>
+                                <div class="form-group">
+                                    <label for="agentKnowledgeCategory">类别</label>
+                                    <select id="agentKnowledgeCategory" class="form-control">
+                                        <option value="POLICY">制度规则</option>
+                                        <option value="EXTERNAL_REFERENCE">外部高校参考资料</option>
+                                        <option value="GUIDE">操作指南</option>
+                                        <option value="FAQ">常见问题</option>
+                                    </select>
+                                </div>
+                                <div class="form-group form-span-2">
+                                    <label for="agentKnowledgeContent">内容</label>
+                                    <textarea id="agentKnowledgeContent" class="form-control agent-message" maxlength="12000" required placeholder="输入可被 Agent 引用的规章、流程或答复模板"></textarea>
+                                </div>
+                                <div class="box-footer">
+                                    <button class="btn btn-primary" type="submit">建立知识索引</button>
+                                    <button id="agentKnowledgeRefreshBtn" class="btn btn-default" type="button">刷新文档</button>
+                                    <button id="agentKnowledgeRebuildBtn" class="btn btn-default" type="button">重建全部索引</button>
+                                </div>
+                            </form>
+                            <form id="agentKnowledgeUploadForm" class="box-body form-grid agent-upload-form">
+                                <div class="form-group form-span-2">
+                                    <label for="agentKnowledgeFile">上传规则文件</label>
+                                    <input id="agentKnowledgeFile" class="form-control" type="file" accept=".pdf,.md,.markdown,.txt" required>
+                                    <small>支持 PDF、Markdown、TXT，最大 10MB。扫描版 PDF 需要先完成 OCR。</small>
+                                </div>
+                                <div class="form-group">
+                                    <label for="agentKnowledgeUploadTitle">文档标题（可选）</label>
+                                    <input id="agentKnowledgeUploadTitle" class="form-control" maxlength="160" placeholder="默认使用文件名">
+                                </div>
+                                <div class="form-group">
+                                    <label for="agentKnowledgeUploadCategory">类别</label>
+                                    <select id="agentKnowledgeUploadCategory" class="form-control">
+                                        <option value="POLICY">制度规则</option>
+                                        <option value="EXTERNAL_REFERENCE">外部高校参考资料</option>
+                                        <option value="GUIDE">操作指南</option>
+                                        <option value="FAQ">常见问题</option>
+                                    </select>
+                                </div>
+                                <div class="box-footer"><button class="btn btn-primary" type="submit">上传并建立索引</button></div>
+                            </form>
+                        </div>
+                    </div>
+                    <div class="col col-7">
+                        <div class="box box-solid">
+                            <div class="box-header">
+                                <h3 class="box-title">RAG 与调用 Trace</h3>
+                                <button id="agentTraceRefreshBtn" class="btn btn-default" type="button">刷新 Trace</button>
+                            </div>
+                            <div class="box-body">
+                                <div id="agentKnowledgeList" class="agent-admin-list empty">等待加载知识文档</div>
+                                <div id="agentKnowledgeStatus" class="agent-admin-list empty">等待加载向量检索状态</div>
+                                <div id="agentTraceList" class="agent-admin-list empty">等待加载 Agent Trace</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="rooms" class="page-view" data-page="rooms">
+                <div class="row">
+                    <div class="col col-5">
+                        <div class="box box-primary">
+                            <div class="box-header">
+                                <h3 class="box-title">教室资源维护</h3>
+                                <span class="box-subtitle">仅管理员可用</span>
+                            </div>
+                            <form id="roomForm" class="box-body form-grid">
+                                <input id="roomId" type="hidden">
+                                <div class="form-group">
+                                    <label for="roomBuildingName">楼栋</label>
+                                    <input id="roomBuildingName" class="form-control" required>
+                                </div>
+                                <div class="form-group">
+                                    <label for="roomNumber">教室号</label>
+                                    <input id="roomNumber" class="form-control" required>
+                                </div>
+                                <div class="form-group">
+                                    <label for="roomCapacity">容量</label>
+                                    <input id="roomCapacity" class="form-control" type="number" min="1" required>
+                                </div>
+                                <div class="form-group">
+                                    <label for="roomType">类型</label>
+                                    <select id="roomType" class="form-control">
+                                        <option value="LAB">实验室</option>
+                                        <option value="LECTURE">阶梯教室</option>
+                                        <option value="SEMINAR">研讨室</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label for="roomEquipment">设备</label>
+                                    <input id="roomEquipment" class="form-control" placeholder="投影,白板,录播">
+                                </div>
+                                <div class="form-group">
+                                    <label for="roomStatus">状态</label>
+                                    <select id="roomStatus" class="form-control">
+                                        <option value="1">可用</option>
+                                        <option value="0">停用</option>
+                                    </select>
+                                </div>
+                                <div class="box-footer">
+                                    <button class="btn btn-primary" type="submit">保存教室</button>
+                                    <button id="roomResetBtn" class="btn btn-default" type="button">清空</button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                    <div class="col col-7">
+                        <div class="box box-solid">
+                            <div class="box-header"><h3 class="box-title">教室列表</h3></div>
+                            <div class="box-body table-box">
+                                <table class="table table-bordered table-striped table-hover">
+                                    <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>楼栋</th>
+                                        <th>教室</th>
+                                        <th>容量</th>
+                                        <th>类型</th>
+                                        <th>状态</th>
+                                        <th class="text-center">操作</th>
+                                    </tr>
+                                    </thead>
+                                    <tbody id="roomsBody"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="roomSlots" class="page-view" data-page="roomSlots">
+                <div class="row">
+                    <div class="col col-5">
+                        <div class="box box-primary">
+                            <div class="box-header">
+                                <h3 class="box-title">开放教室时段</h3>
+                                <span class="box-subtitle">学生只能预约 OPEN 的 room_slot 名额</span>
+                            </div>
+                            <form id="slotForm" class="box-body form-grid">
+                                <div class="form-group full">
+                                    <label for="slotRoomSelect">教室</label>
+                                    <select id="slotRoomSelect" class="form-control" required></select>
+                                </div>
+                                <div class="form-group">
+                                    <label for="slotDate">开始日期</label>
+                                    <input id="slotDate" class="form-control" type="date" required>
+                                </div>
+                                <div class="form-group">
+                                    <label for="slotEndDate">批量结束日期</label>
+                                    <input id="slotEndDate" class="form-control" type="date">
+                                </div>
+                                <div class="form-group">
+                                    <label for="slotTimeSlot">时间段</label>
+                                    <select id="slotTimeSlot" class="form-control">
+                                        <option value="08:00-10:00">08:00-10:00</option>
+                                        <option value="10:00-12:00">10:00-12:00</option>
+                                        <option value="14:00-16:00">14:00-16:00</option>
+                                        <option value="16:00-18:00">16:00-18:00</option>
+                                        <option value="18:00-20:00">18:00-20:00</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label for="slotCapacity">名额容量</label>
+                                    <input id="slotCapacity" class="form-control" type="number" min="1" value="30" required>
+                                </div>
+                                <div class="form-group">
+                                    <label for="slotStatus">状态</label>
+                                    <select id="slotStatus" class="form-control">
+                                        <option value="1">OPEN 开放</option>
+                                        <option value="0">CLOSED 关闭</option>
+                                        <option value="2">MAINTENANCE 维护</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label for="slotOpenType">开放类型</label>
+                                    <select id="slotOpenType" class="form-control">
+                                        <option value="SELF_STUDY">自习开放</option>
+                                        <option value="ACTIVITY">活动开放</option>
+                                        <option value="TEMPORARY">临时开放</option>
+                                    </select>
+                                </div>
+                                <div class="box-footer">
+                                    <button class="btn btn-primary" type="submit">创建单个时段</button>
+                                    <button id="slotBatchBtn" class="btn btn-info" type="button">按日期批量创建</button>
+                                    <button id="slotReconcileBtn" class="btn btn-warning" type="button">重算计数</button>
+                                    <button id="slotRefreshBtn" class="btn btn-default" type="button">刷新列表</button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                    <div class="col col-7">
+                        <div class="box box-solid">
+                            <div class="box-header">
+                                <h3 class="box-title">room_slot 列表</h3>
+                                <span class="box-subtitle">已有预约或候补的时段不能关闭、维护或删除，可先重算计数清理测试脏数据</span>
+                            </div>
+                            <div class="box-body table-box">
+                                <table class="table table-bordered table-striped table-hover">
+                                    <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>教室</th>
+                                        <th>日期</th>
+                                        <th>时间段</th>
+                                        <th>容量</th>
+                                        <th>剩余</th>
+                                        <th>已约</th>
+                                        <th>候补</th>
+                                        <th>类型</th>
+                                        <th>状态</th>
+                                        <th class="text-center">操作</th>
+                                    </tr>
+                                    </thead>
+                                    <tbody id="roomSlotsBody"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="statistics" class="page-view" data-page="statistics">
+                <div class="row">
+                    <div class="col col-6">
+                        <div class="box box-info">
+                            <div class="box-header">
+                                <h3 class="box-title">Kafka / Event Outbox</h3>
+                                <button id="statisticsRefreshBtn" class="btn btn-default small" type="button">刷新统计</button>
+                            </div>
+                            <div class="box-body"><pre id="statisticsOverview" class="json-box">等待刷新</pre></div>
+                        </div>
+                    </div>
+                    <div class="col col-6">
+                        <div class="box box-success">
+                            <div class="box-header"><h3 class="box-title">统计落库结果</h3></div>
+                            <div class="box-body"><pre id="statisticsDashboard" class="json-box">等待刷新</pre></div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="ops" class="page-view" data-page="ops">
+                <div class="row">
+                    <div class="col col-6">
+                        <div class="box box-info">
+                            <div class="box-header"><h3 class="box-title">Redis 运行状态</h3></div>
+                            <div class="box-body"><pre id="redisOverview" class="json-box">等待刷新</pre></div>
+                        </div>
+                    </div>
+                    <div class="col col-6">
+                        <div class="box box-success">
+                            <div class="box-header"><h3 class="box-title">RabbitMQ 队列</h3></div>
+                            <div class="box-body"><pre id="mqOverview" class="json-box">等待刷新</pre></div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="feedback" class="page-view" data-page="feedback">
+                <div class="row">
+                    <div class="col col-5 role-user-only">
+                        <div class="box box-primary">
+                            <div class="box-header">
+                                <h3 class="box-title">提交问题反馈</h3>
+                                <span class="box-subtitle">预约异常、候补疑问、页面问题都可以提交给管理员</span>
+                            </div>
+                            <form id="feedbackForm" class="box-body form-grid">
+                                <div class="form-group full">
+                                    <label for="feedbackTitle">问题标题</label>
+                                    <input id="feedbackTitle" class="form-control" maxlength="128" placeholder="例如：候补数量显示异常" required>
+                                </div>
+                                <div class="form-group full">
+                                    <label for="feedbackContent">问题描述</label>
+                                    <textarea id="feedbackContent" class="form-control" maxlength="1000" rows="6" placeholder="请描述操作步骤、时间、页面提示或订单号" required></textarea>
+                                </div>
+                                <div class="box-footer">
+                                    <button class="btn btn-primary" type="submit">提交反馈</button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                    <div class="col col-5 role-admin-only">
+                        <div class="box box-warning">
+                            <div class="box-header">
+                                <h3 class="box-title">管理员处理</h3>
+                                <span class="box-subtitle">选择反馈后回复，学生会收到站内通知</span>
+                            </div>
+                            <form id="feedbackReplyForm" class="box-body form-grid">
+                                <div class="form-group">
+                                    <label for="feedbackReplyId">反馈单号</label>
+                                    <input id="feedbackReplyId" class="form-control" readonly placeholder="点击下方处理">
+                                </div>
+                                <div class="form-group full">
+                                    <label for="feedbackReplyText">回复内容</label>
+                                    <textarea id="feedbackReplyText" class="form-control" maxlength="1000" rows="6" placeholder="写给学生的处理说明"></textarea>
+                                </div>
+                                <div class="box-footer">
+                                    <button class="btn btn-warning" type="submit">回复学生</button>
+                                    <button id="feedbackCloseBtn" class="btn btn-default" type="button">关闭工单</button>
+                                    <button id="feedbackResetBtn" class="btn btn-default" type="button">清空选择</button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                    <div class="col col-7">
+                        <div class="box box-solid">
+                            <div class="box-header">
+                                <h3 id="feedbackTitleText" class="box-title">反馈列表</h3>
+                                <span id="feedbackSubtitle" class="box-subtitle">学生查看自己的反馈，管理员查看全量反馈</span>
+                            </div>
+                            <div class="box-body table-box">
+                                <table class="table table-bordered table-striped table-hover">
+                                    <thead>
+                                    <tr>
+                                        <th>单号</th>
+                                        <th>学生</th>
+                                        <th>标题</th>
+                                        <th>状态</th>
+                                        <th>管理员回复</th>
+                                        <th class="text-center">操作</th>
+                                    </tr>
+                                    </thead>
+                                    <tbody id="feedbackBody"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="notifications" class="page-view" data-page="notifications">
+                <div class="box box-warning">
+                    <div class="box-header">
+                        <h3 class="box-title">站内通知</h3>
+                        <span class="box-subtitle">未读 <b id="unreadCount">0</b> 条，SSE 在线实时推送</span>
+                    </div>
+                    <div id="notificationsList" class="message-list empty">暂无通知</div>
+                </div>
+            </section>
+
+            <section id="logs" class="page-view" data-page="logs">
+                <div class="row">
+                    <div class="col col-5">
+                        <div class="box box-solid">
+                            <div class="box-header">
+                                <h3 class="box-title">页面联调日志</h3>
+                                <span class="box-subtitle">记录最近 12 次页面操作</span>
+                            </div>
+                            <div id="logList" class="log-list"></div>
+                        </div>
+                    </div>
+                    <div class="col col-7">
+                        <div class="box box-info">
+                            <div class="box-header">
+                                <h3 class="box-title">后端接口审计</h3>
+                                <span class="box-subtitle">traceId、耗时、状态码和操作者</span>
+                            </div>
+                            <div id="auditList" class="audit-list empty">等待刷新</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </section>
+    </main>
+</div>
+
+<script src="./app.js"></script>
+</body>
+</html>
